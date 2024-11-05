@@ -118,12 +118,12 @@ impl SQLiteDatabase {
     pub fn list_tables(&mut self) -> Result<Vec<String>> {
         let mut tables = Vec::new();
 
-        // Read first page (contains sqlite_schema)
+        // Read first page
         let mut page = vec![0; self.get_info()?.page_size() as usize];
         self.file.seek(std::io::SeekFrom::Start(0))?;
         self.file.read_exact(&mut page)?;
 
-        // Skip database header on first page
+        // Skip database header
         let header_size = 100;
 
         // Read B-tree page header
@@ -131,7 +131,7 @@ impl SQLiteDatabase {
 
         // Read cell pointer array
         let mut cell_pointers = Vec::with_capacity(num_cells as usize);
-        let array_start = header_size + 8; // After page header
+        let array_start = header_size + 8;
 
         for i in 0..num_cells {
             let offset = array_start + (i as usize * 2);
@@ -140,47 +140,52 @@ impl SQLiteDatabase {
         }
 
         // Process each cell
-        for &offset in cell_pointers.iter() {
-            let mut pos = offset as usize;
+        for &ptr in cell_pointers.iter() {
+            let mut pos = ptr as usize;
 
-            // Skip payload size varint and rowid
-            while page[pos] & 0x80 != 0 {
-                pos += 1;
-            }
-            pos += 1;
+            // Skip payload length varint
             while page[pos] & 0x80 != 0 {
                 pos += 1;
             }
             pos += 1;
 
-            // Parse record header
+            // Skip rowid varint
+            while page[pos] & 0x80 != 0 {
+                pos += 1;
+            }
+            pos += 1;
+
+            // Get header size
             let header_size = self.read_varint(&page[pos..])? as usize;
             pos += self.varint_size(&page[pos..]);
 
-            // Skip type column serial type
-            pos += self.varint_size(&page[pos..]);
-
-            // Skip name column serial type
-            pos += self.varint_size(&page[pos..]);
-
-            // Get tbl_name column serial type
-            let tbl_name_type = self.read_varint(&page[pos..])? as i64;
-            pos += self.varint_size(&page[pos..]);
-
-            // Skip remaining serial types
+            // Skip to the table name field (field 3)
             for _ in 0..2 {
                 pos += self.varint_size(&page[pos..]);
             }
 
-            // Skip type and name columns
-            let type_size = ((page[offset as usize + header_size] as i64 - 13) / 2) as usize;
-            pos += type_size;
+            // Get table name length
+            let name_type = self.read_varint(&page[pos..])? as usize;
+            pos += self.varint_size(&page[pos..]);
 
-            let name_size = ((tbl_name_type - 13) / 2) as usize;
+            // Skip remaining header fields
+            for _ in 0..2 {
+                pos += self.varint_size(&page[pos..]);
+            }
+
+            // Skip first two fields content
+            for _ in 0..2 {
+                let field_size = self.read_varint(&page[pos..])? as usize;
+                pos += self.varint_size(&page[pos..]);
+                pos += field_size;
+            }
 
             // Read table name
+            let name_size = (name_type - 13) / 2; // SQLite string size calculation
             let table_name = String::from_utf8(page[pos..pos + name_size].to_vec())?;
-            if table_name != "sqlite_sequence" {
+
+            // Only add user tables (skip internal tables)
+            if !table_name.starts_with("sqlite_") {
                 tables.push(table_name);
             }
         }
