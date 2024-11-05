@@ -1,5 +1,4 @@
-use clap::{AppSettings, Parser};
-use std::{fmt::Display, path::PathBuf};
+use std::{env, fmt::Display, path::PathBuf};
 
 /// Available commands for the SQLite CLI
 #[derive(Debug, Clone, PartialEq)]
@@ -30,12 +29,25 @@ impl Display for Command {
 }
 
 /// Command line arguments for the SQLite CLI
-#[derive(Parser, Debug)]
-#[clap(version, author, about, setting(AppSettings::ColoredHelp))]
 pub struct Args {
     /// Path to the SQLite database file to process
     pub file: PathBuf,
 
     /// The command to execute (dbinfo)
     pub command: Command,
+}
+
+impl Args {
+    pub fn parse() -> Result<Self, String> {
+        let args: Vec<String> = env::args().collect();
+
+        if args.len() != 3 {
+            return Err("Usage: <program> <database_file> <command>".to_string());
+        }
+
+        let file = PathBuf::from(&args[1]);
+        let command = args[2].parse()?;
+
+        Ok(Args { file, command })
+    }
 }

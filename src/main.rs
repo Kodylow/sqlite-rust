@@ -1,5 +1,4 @@
 use anyhow::Result;
-use clap::Parser;
 use tracing_subscriber::fmt;
 
 pub mod cli;
@@ -10,7 +9,7 @@ fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let args = cli::Args::parse();
+    let args = cli::Args::parse().expect("Failed to parse arguments");
     run(args)?;
 
     Ok(())

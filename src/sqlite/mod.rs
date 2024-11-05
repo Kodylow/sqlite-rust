@@ -111,10 +111,41 @@ impl SQLiteDatabase {
         })
     }
 
-    /// Lists all user tables in the database
+    /// Lists all user tables in the database by reading the sqlite_schema table
     ///
-    /// Reads the sqlite_schema table from page 1 and extracts table names.
-    /// Handles varint decoding and record format parsing according to SQLite spec.
+    /// # SQLite Record Format Details
+    ///
+    /// The first page contains the sqlite_schema table which stores metadata about all tables.
+    /// Each record in sqlite_schema follows this format:
+    ///
+    /// 1. Payload length (varint)
+    /// 2. Rowid (varint)
+    /// 3. Header size (varint)
+    /// 4. Record header containing serial types for each column
+    /// 5. Record body containing the actual column values
+    ///
+    /// The schema table has 5 columns in order:
+    /// - type: "table" for regular tables
+    /// - name: name of the object
+    /// - tbl_name: table name this refers to
+    /// - rootpage: page number of root b-tree
+    /// - sql: CREATE statement
+    ///
+    /// This implementation:
+    /// 1. Reads the full first page
+    /// 2. Parses cell pointers from the page header
+    /// 3. For each cell:
+    ///    - Skips payload length and rowid
+    ///    - Reads header size and serial types
+    ///    - Skips type and name columns
+    ///    - Extracts tbl_name if it's a user table
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - File IO fails
+    /// - Page data is invalid/corrupted
+    /// - UTF-8 parsing fails for table names
     pub fn list_tables(&mut self) -> Result<Vec<String>> {
         let mut tables = Vec::new();
         let page_size = self.get_info()?.page_size() as usize;
@@ -129,7 +160,7 @@ impl SQLiteDatabase {
 
         // Read B-tree page header
         let num_cells = u16::from_be_bytes([page[header_size + 3], page[header_size + 4]]);
-        let content_offset =
+        let _content_offset =
             u16::from_be_bytes([page[header_size + 5], page[header_size + 6]]) as usize;
 
         // Read cell pointer array
