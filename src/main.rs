@@ -1,10 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
-use std::fs::File;
-use std::io::prelude::*;
 use tracing_subscriber::fmt;
 
-mod cli;
+pub mod cli;
+pub mod sqlite;
 
 fn main() -> Result<()> {
     fmt()
@@ -12,25 +11,19 @@ fn main() -> Result<()> {
         .init();
 
     let args = cli::Args::parse();
+    run(args)?;
 
-    // Parse command and act accordingly
+    Ok(())
+}
+
+pub fn run(args: cli::Args) -> Result<()> {
     match args.command {
         cli::Command::DbInfo => {
-            let mut file = File::open(&args.file)?;
-            let mut header = [0; 100];
-            file.read_exact(&mut header)?;
-
-            // The page size is stored at the 16th byte offset, using 2 bytes in big-endian order
-            #[allow(unused_variables)]
-            let page_size = u16::from_be_bytes([header[16], header[17]]);
-
-            // You can use print statements as follows for debugging, they'll be visible when running tests.
-            println!("Logs from your program will appear here!");
-
-            // Uncomment this block to pass the first stage
-            println!("database page size: {}", page_size);
+            let mut db = sqlite::SQLiteDatabase::open(&args.file)?;
+            let info = db.get_info()?;
+            println!("database page size: {}", info.page_size());
+            println!("number of tables: {}", info.num_tables());
         }
     }
-
     Ok(())
 }
