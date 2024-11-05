@@ -117,9 +117,10 @@ impl SQLiteDatabase {
     /// Handles varint decoding and record format parsing according to SQLite spec.
     pub fn list_tables(&mut self) -> Result<Vec<String>> {
         let mut tables = Vec::new();
+        let page_size = self.get_info()?.page_size() as usize;
 
         // Read first page
-        let mut page = vec![0; self.get_info()?.page_size() as usize];
+        let mut page = vec![0; page_size];
         self.file.seek(std::io::SeekFrom::Start(0))?;
         self.file.read_exact(&mut page)?;
 
@@ -128,6 +129,8 @@ impl SQLiteDatabase {
 
         // Read B-tree page header
         let num_cells = u16::from_be_bytes([page[header_size + 3], page[header_size + 4]]);
+        let content_offset =
+            u16::from_be_bytes([page[header_size + 5], page[header_size + 6]]) as usize;
 
         // Read cell pointer array
         let mut cell_pointers = Vec::with_capacity(num_cells as usize);
@@ -135,58 +138,52 @@ impl SQLiteDatabase {
 
         for i in 0..num_cells {
             let offset = array_start + (i as usize * 2);
-            let ptr = u16::from_be_bytes([page[offset], page[offset + 1]]);
+            let ptr = u16::from_be_bytes([page[offset], page[offset + 1]]) as usize;
             cell_pointers.push(ptr);
         }
 
         // Process each cell
         for &ptr in cell_pointers.iter() {
-            let mut pos = ptr as usize;
+            let mut pos = ptr;
 
             // Skip payload length varint
-            while page[pos] & 0x80 != 0 {
-                pos += 1;
-            }
-            pos += 1;
+            pos += self.varint_size(&page[pos..]);
 
             // Skip rowid varint
-            while page[pos] & 0x80 != 0 {
-                pos += 1;
-            }
-            pos += 1;
+            pos += self.varint_size(&page[pos..]);
 
-            // Get header size
+            // Read header size varint
             let header_size = self.read_varint(&page[pos..])? as usize;
             pos += self.varint_size(&page[pos..]);
+            let header_end = pos + header_size - self.varint_size(&page[pos - 1..]);
 
-            // Skip to the table name field (field 3)
-            for _ in 0..2 {
+            // Read serial types
+            let mut serial_types = Vec::new();
+            while pos < header_end {
+                let serial_type = self.read_varint(&page[pos..])?;
                 pos += self.varint_size(&page[pos..]);
+                serial_types.push(serial_type);
             }
 
-            // Get table name length
-            let name_type = self.read_varint(&page[pos..])? as usize;
-            pos += self.varint_size(&page[pos..]);
-
-            // Skip remaining header fields
-            for _ in 0..2 {
-                pos += self.varint_size(&page[pos..]);
-            }
-
-            // Skip first two fields content
-            for _ in 0..2 {
-                let field_size = self.read_varint(&page[pos..])? as usize;
-                pos += self.varint_size(&page[pos..]);
-                pos += field_size;
+            // Skip type and name fields
+            for i in 0..2 {
+                let size = match serial_types[i] {
+                    type_code if type_code >= 13 => (type_code - 13) / 2,
+                    _ => continue,
+                };
+                pos += size as usize;
             }
 
             // Read table name
-            let name_size = (name_type - 13) / 2; // SQLite string size calculation
-            let table_name = String::from_utf8(page[pos..pos + name_size].to_vec())?;
-
-            // Only add user tables (skip internal tables)
-            if !table_name.starts_with("sqlite_") {
-                tables.push(table_name);
+            if let Some(&tbl_name_type) = serial_types.get(2) {
+                if tbl_name_type >= 13 {
+                    let name_size = ((tbl_name_type - 13) / 2) as usize;
+                    if let Ok(table_name) = String::from_utf8(page[pos..pos + name_size].to_vec()) {
+                        if !table_name.starts_with("sqlite_") {
+                            tables.push(table_name);
+                        }
+                    }
+                }
             }
         }
 

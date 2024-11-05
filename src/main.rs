@@ -27,7 +27,7 @@ pub fn run(args: cli::Args) -> Result<()> {
         cli::Command::Tables => {
             let mut db = sqlite::SQLiteDatabase::open(&args.file)?;
             let tables = db.list_tables()?;
-            println!("tables: {:?}", tables);
+            println!("{}", tables.join(" "));
         }
     }
     Ok(())
