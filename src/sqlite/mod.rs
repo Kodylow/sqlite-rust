@@ -110,4 +110,106 @@ impl SQLiteDatabase {
             num_tables,
         })
     }
+
+    /// Lists all user tables in the database
+    ///
+    /// Reads the sqlite_schema table from page 1 and extracts table names.
+    /// Handles varint decoding and record format parsing according to SQLite spec.
+    pub fn list_tables(&mut self) -> Result<Vec<String>> {
+        let mut tables = Vec::new();
+
+        // Read first page (contains sqlite_schema)
+        let mut page = vec![0; self.get_info()?.page_size() as usize];
+        self.file.seek(std::io::SeekFrom::Start(0))?;
+        self.file.read_exact(&mut page)?;
+
+        // Skip database header on first page
+        let header_size = 100;
+
+        // Read B-tree page header
+        let num_cells = u16::from_be_bytes([page[header_size + 3], page[header_size + 4]]);
+
+        // Read cell pointer array
+        let mut cell_pointers = Vec::with_capacity(num_cells as usize);
+        let array_start = header_size + 8; // After page header
+
+        for i in 0..num_cells {
+            let offset = array_start + (i as usize * 2);
+            let ptr = u16::from_be_bytes([page[offset], page[offset + 1]]);
+            cell_pointers.push(ptr);
+        }
+
+        // Process each cell
+        for &offset in cell_pointers.iter() {
+            let mut pos = offset as usize;
+
+            // Skip payload size varint and rowid
+            while page[pos] & 0x80 != 0 {
+                pos += 1;
+            }
+            pos += 1;
+            while page[pos] & 0x80 != 0 {
+                pos += 1;
+            }
+            pos += 1;
+
+            // Parse record header
+            let header_size = self.read_varint(&page[pos..])? as usize;
+            pos += self.varint_size(&page[pos..]);
+
+            // Skip type column serial type
+            pos += self.varint_size(&page[pos..]);
+
+            // Skip name column serial type
+            pos += self.varint_size(&page[pos..]);
+
+            // Get tbl_name column serial type
+            let tbl_name_type = self.read_varint(&page[pos..])? as i64;
+            pos += self.varint_size(&page[pos..]);
+
+            // Skip remaining serial types
+            for _ in 0..2 {
+                pos += self.varint_size(&page[pos..]);
+            }
+
+            // Skip type and name columns
+            let type_size = ((page[offset as usize + header_size] as i64 - 13) / 2) as usize;
+            pos += type_size;
+
+            let name_size = ((tbl_name_type - 13) / 2) as usize;
+
+            // Read table name
+            let table_name = String::from_utf8(page[pos..pos + name_size].to_vec())?;
+            if table_name != "sqlite_sequence" {
+                tables.push(table_name);
+            }
+        }
+
+        Ok(tables)
+    }
+
+    // Helper to read a varint
+    fn read_varint(&self, bytes: &[u8]) -> Result<u64> {
+        let mut result = 0u64;
+        let mut shift = 0;
+
+        for &byte in bytes.iter() {
+            result |= ((byte & 0x7f) as u64) << shift;
+            if byte & 0x80 == 0 {
+                break;
+            }
+            shift += 7;
+        }
+
+        Ok(result)
+    }
+
+    // Helper to get varint size
+    fn varint_size(&self, bytes: &[u8]) -> usize {
+        let mut size = 0;
+        while size < bytes.len() && bytes[size] & 0x80 != 0 {
+            size += 1;
+        }
+        size + 1
+    }
 }

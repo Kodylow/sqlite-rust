@@ -5,6 +5,7 @@ use std::{fmt::Display, path::PathBuf};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     DbInfo,
+    Tables,
 }
 
 impl std::str::FromStr for Command {
@@ -13,6 +14,7 @@ impl std::str::FromStr for Command {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             ".dbinfo" => Ok(Command::DbInfo),
+            ".tables" => Ok(Command::Tables),
             _ => Err(format!("Unknown command: {}", s)),
         }
     }
@@ -22,14 +24,14 @@ impl Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Command::DbInfo => write!(f, ".dbinfo"),
+            Command::Tables => write!(f, ".tables"),
         }
     }
 }
 
 /// Command line arguments for the SQLite CLI
 #[derive(Parser, Debug)]
-#[clap(version, author, about)]
-#[clap(setting = AppSettings::ColoredHelp)]
+#[clap(version, author, about, setting(AppSettings::ColoredHelp))]
 pub struct Args {
     /// Path to the SQLite database file to process
     pub file: PathBuf,

@@ -24,6 +24,11 @@ pub fn run(args: cli::Args) -> Result<()> {
             println!("database page size: {}", info.page_size());
             println!("number of tables: {}", info.num_tables());
         }
+        cli::Command::Tables => {
+            let mut db = sqlite::SQLiteDatabase::open(&args.file)?;
+            let tables = db.list_tables()?;
+            println!("tables: {:?}", tables);
+        }
     }
     Ok(())
 }
