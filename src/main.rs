@@ -1,21 +1,22 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
+use clap::Parser;
 use std::fs::File;
 use std::io::prelude::*;
+use tracing_subscriber::fmt;
+
+mod cli;
 
 fn main() -> Result<()> {
-    // Parse arguments
-    let args = std::env::args().collect::<Vec<_>>();
-    match args.len() {
-        0 | 1 => bail!("Missing <database path> and <command>"),
-        2 => bail!("Missing <command>"),
-        _ => {}
-    }
+    fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
+
+    let args = cli::Args::parse();
 
     // Parse command and act accordingly
-    let command = &args[2];
-    match command.as_str() {
-        ".dbinfo" => {
-            let mut file = File::open(&args[1])?;
+    match args.command {
+        cli::Command::DbInfo => {
+            let mut file = File::open(&args.file)?;
             let mut header = [0; 100];
             file.read_exact(&mut header)?;
 
@@ -29,7 +30,6 @@ fn main() -> Result<()> {
             // Uncomment this block to pass the first stage
             println!("database page size: {}", page_size);
         }
-        _ => bail!("Missing or invalid command passed: {}", command),
     }
 
     Ok(())
