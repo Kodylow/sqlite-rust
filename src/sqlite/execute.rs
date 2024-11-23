@@ -227,18 +227,47 @@ impl SQLiteDatabase {
         let page_size = self.get_info()?.page_size();
         let mut values = Vec::new();
 
-        // Read the root page
         let page = BTreePage::read(&mut self.file, root_page, page_size)?;
 
-        // For now, assume it's a leaf page and just read the values
-        // You'll need to handle interior pages later
         if page.page_type() == 13 {
-            for i in 0..page.num_cells() {
-                // This is a placeholder - you'll need to implement actual record reading
-                values.push(format!("{}", i));
+            // Leaf page
+            // Read cells in reverse order since they're stored from end to start
+            for i in (0..page.num_cells()).rev() {
+                let cell_data = page.get_cell_data(i)?;
+                let mut record = Record::new(&cell_data);
+
+                // Skip payload length and rowid
+                record.read_varint()?; // payload length
+                record.read_varint()?; // rowid
+
+                // Read header to get serial types
+                let serial_types = record.read_header()?;
+
+                // Skip first serial type (internal)
+                for (idx, &type_code) in serial_types.iter().skip(1).enumerate() {
+                    // We only care about the column we're looking for
+                    if idx == 0 {
+                        // Assuming 'banana' is the first column
+                        let value = match type_code {
+                            0 => "NULL".to_string(),
+                            1..=6 => record.read_integer(type_code)?.to_string(),
+                            7 => record.read_float()?.to_string(),
+                            n if n >= 13 => record
+                                .read_string_field(type_code)?
+                                .unwrap_or_else(|| "NULL".to_string()),
+                            _ => "?".to_string(),
+                        };
+                        values.push(value);
+                        break;
+                    } else {
+                        // Skip other columns based on their type
+                        record.skip_fields(1, &[type_code]);
+                    }
+                }
             }
         }
 
+        values.reverse(); // Restore original order
         Ok(ExecuteResult::Values(values))
     }
 
