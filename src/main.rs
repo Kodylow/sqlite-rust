@@ -6,7 +6,7 @@ pub mod cli;
 pub mod sqlite;
 
 fn main() -> Result<()> {
-    std::env::set_var("RUST_LOG", "info");
+    // std::env::set_var("RUST_LOG", "info");
 
     fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
