@@ -39,7 +39,7 @@ pub fn run(args: cli::Args) -> Result<()> {
             info!("Statement: {:?}", statement);
             let mut db = sqlite::db::SQLiteDatabase::open(&args.file)?;
             let result = db.execute(&statement)?;
-            println!("{:?}", result);
+            println!("{}", result);
         }
     }
     Ok(())

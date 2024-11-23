@@ -5,6 +5,7 @@
 //! to the SQLite file format specification.
 
 use anyhow::{anyhow, Result};
+use std::fmt::Display;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
@@ -19,6 +20,14 @@ pub enum ExecuteResult {
     /// Count result, used for COUNT(*) queries
     Count(u32),
     // Add other result types as needed
+}
+
+impl Display for ExecuteResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ExecuteResult::Count(count) => write!(f, "{}", count),
+        }
+    }
 }
 
 impl SQLiteDatabase {
