@@ -35,7 +35,30 @@ impl Display for Command {
     }
 }
 
-/// Command line arguments for the SQLite CLI
+/// SQL Statement related types
+#[derive(Debug)]
+pub enum StatementType {
+    Insert,
+    Select,
+}
+
+pub struct Statement {
+    statement_type: StatementType,
+}
+
+#[derive(Debug)]
+pub enum PrepareResult {
+    Success,
+    UnrecognizedStatement,
+}
+
+#[derive(Debug)]
+pub enum MetaCommandResult {
+    Success,
+    UnrecognizedCommand,
+}
+
+/// CLI Arguments handling
 #[derive(Debug)]
 pub struct Args {
     pub file: PathBuf,
@@ -47,7 +70,6 @@ impl Args {
         let args: Vec<String> = env::args().skip(1).collect();
 
         if args.is_empty() {
-            // Start with in-memory database if no file specified
             return Ok(Args {
                 file: PathBuf::from(":memory:"),
                 command: None,
@@ -65,22 +87,18 @@ impl Args {
     }
 }
 
-/// A small wrapper around the state needed to store and interact with user input.
-/// Similar to the C implementation's InputBuffer struct.
+/// Input handling
 pub struct InputBuffer {
     buffer: String,
 }
 
 impl InputBuffer {
-    /// Creates a new empty InputBuffer
     pub fn new() -> Self {
         Self {
             buffer: String::new(),
         }
     }
 
-    /// Reads a line of input from stdin into the buffer.
-    /// Trims trailing whitespace and returns Result.
     pub fn read_input(&mut self) -> Result<()> {
         self.buffer.clear();
         io::stdout().flush()?;
@@ -90,48 +108,96 @@ impl InputBuffer {
     }
 }
 
-/// Prints the SQLite prompt to stdout
-pub fn print_prompt() {
-    print!("sqlite-rs> ");
+/// Statement handling
+pub fn prepare_statement(input: &str) -> Result<(PrepareResult, Option<Statement>)> {
+    if input.starts_with("insert") {
+        Ok((
+            PrepareResult::Success,
+            Some(Statement {
+                statement_type: StatementType::Insert,
+            }),
+        ))
+    } else if input.starts_with("select") {
+        Ok((
+            PrepareResult::Success,
+            Some(Statement {
+                statement_type: StatementType::Select,
+            }),
+        ))
+    } else {
+        Ok((PrepareResult::UnrecognizedStatement, None))
+    }
 }
 
-pub fn handle_dbinfo() -> Result<()> {
-    println!("Database info placeholder");
+pub fn execute_statement(statement: &Statement) -> Result<()> {
+    match statement.statement_type {
+        StatementType::Insert => println!("This is where we would do an insert."),
+        StatementType::Select => println!("This is where we would do a select."),
+    }
     Ok(())
 }
 
-pub fn handle_tables() -> Result<()> {
-    println!("Tables placeholder");
-    Ok(())
-}
-
-/// Handles a command entered by the user.
-/// Returns Ok(true) if the REPL should exit, Ok(false) otherwise.
-pub fn handle_command(command: &str) -> Result<bool> {
+/// Command handling
+pub fn do_meta_command(command: &str) -> MetaCommandResult {
     match command {
-        ".exit" => Ok(true),
-        ".dbinfo" => {
-            handle_dbinfo()?;
-            Ok(false)
+        ".exit" => std::process::exit(0),
+        ".help" => handle_help(),
+        ".dbinfo" => handle_dbinfo(),
+        ".tables" => handle_tables(),
+        _ => MetaCommandResult::UnrecognizedCommand,
+    }
+}
+
+pub fn handle_command(command: &str) -> Result<bool> {
+    if command.starts_with('.') {
+        match do_meta_command(command) {
+            MetaCommandResult::Success => Ok(false),
+            MetaCommandResult::UnrecognizedCommand => {
+                println!("Unrecognized command '{}'.", command);
+                Ok(false)
+            }
         }
-        ".tables" => {
-            handle_tables()?;
-            Ok(false)
-        }
-        cmd if cmd.trim().is_empty() => Ok(false),
-        _ => {
-            println!("Unrecognized command '{}'.", command);
-            Ok(false)
+    } else {
+        let (prepare_result, statement) = prepare_statement(command)?;
+        match prepare_result {
+            PrepareResult::Success => {
+                execute_statement(statement.as_ref().unwrap())?;
+                Ok(false)
+            }
+            PrepareResult::UnrecognizedStatement => {
+                println!("Unrecognized keyword at start of '{}'.", command);
+                Ok(false)
+            }
         }
     }
 }
 
-/// Starts the REPL (Read-Execute-Print Loop) mode.
-/// Prints welcome message and enters an infinite loop that:
-/// 1. Prints the prompt
-/// 2. Gets a line of input
-/// 3. Processes that line of input
-/// Loop continues until .exit command is received
+/// Command implementations
+pub fn handle_dbinfo() -> MetaCommandResult {
+    println!("Database info placeholder");
+    MetaCommandResult::Success
+}
+
+pub fn handle_tables() -> MetaCommandResult {
+    println!("Tables placeholder");
+    MetaCommandResult::Success
+}
+
+pub fn handle_help() -> MetaCommandResult {
+    println!("SQLite-rs v0.1.0");
+    println!("Commands:");
+    println!(".exit - Exit the program");
+    println!(".help - Print this help message");
+    println!(".dbinfo - Print database info");
+    println!(".tables - Print table names");
+    MetaCommandResult::Success
+}
+
+/// REPL functionality
+pub fn print_prompt() {
+    print!("sqlite-rs> ");
+}
+
 pub fn repl_mode() -> Result<()> {
     let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     println!("SQLite-rs v0.1.0 {}", timestamp);
@@ -153,8 +219,14 @@ pub fn repl_mode() -> Result<()> {
 
 pub fn execute_command(args: Args) -> Result<()> {
     match args.command {
-        Some(Command::DbInfo) => handle_dbinfo(),
-        Some(Command::Tables) => handle_tables(),
+        Some(Command::DbInfo) => {
+            handle_dbinfo();
+            Ok(())
+        }
+        Some(Command::Tables) => {
+            handle_tables();
+            Ok(())
+        }
         None => repl_mode(),
     }
 }
