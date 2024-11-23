@@ -116,6 +116,9 @@ impl Statement {
                         args: vec![Expression::Asterisk],
                     }));
                 }
+                Token::Identifier(column) => {
+                    selections.push(Expression::Column(column));
+                }
                 Token::Keyword(k) if k.to_uppercase() == "FROM" => break,
                 _ => return Err(anyhow!("Unexpected token in selections")),
             }
