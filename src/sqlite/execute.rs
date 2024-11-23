@@ -229,9 +229,8 @@ impl SQLiteDatabase {
         let page = BTreePage::read(&mut self.file, root_page, page_size)?;
 
         if page.page_type() == 13 {
-            // Leaf page
-            // Read cells in reverse order since they're stored from end to start
-            for i in (0..page.num_cells()).rev() {
+            // Process cells in forward order using original unsorted pointers
+            for i in 0..page.num_cells() {
                 let cell_data = page.get_cell_data(i)?;
                 let mut record = Record::new(&cell_data);
 
@@ -244,9 +243,7 @@ impl SQLiteDatabase {
 
                 // Skip first serial type (internal)
                 for (idx, &type_code) in serial_types.iter().skip(1).enumerate() {
-                    // We only care about the column we're looking for
                     if idx == 0 {
-                        // Assuming 'banana' is the first column
                         let value = match type_code {
                             0 => "NULL".to_string(),
                             1..=6 => record.read_integer(type_code)?.to_string(),
