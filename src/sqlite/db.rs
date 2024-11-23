@@ -100,11 +100,13 @@ impl SQLiteDatabase {
         let page_size = u16::from_be_bytes([header[16], header[17]]);
         info!("Read page size from header: {}", page_size);
 
-        // For now, we'll set num_tables to 0 since it's not critical
-        // You can implement proper table counting later if needed
+        // Count tables using list_tables()
+        let num_tables = self.list_tables()?.len() as u32;
+        info!("Found {} tables", num_tables);
+
         Ok(SQLiteDatabaseInfo {
             page_size,
-            num_tables: 0,
+            num_tables,
         })
     }
 
@@ -154,7 +156,10 @@ impl SQLiteDatabase {
     /// - UTF-8 parsing fails for table names
     pub fn list_tables(&mut self) -> Result<Vec<String>> {
         let mut tables = Vec::new();
-        let page_size = self.get_info()?.page_size() as usize;
+
+        // Read header to get page size directly
+        let header = self.read_header()?;
+        let page_size = u16::from_be_bytes([header[16], header[17]]) as usize;
 
         // Read first page
         let mut page = vec![0; page_size];
