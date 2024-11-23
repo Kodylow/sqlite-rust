@@ -3,6 +3,15 @@ use std::{env, fmt::Display, path::PathBuf};
 /// Available commands for the SQLite CLI
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
+    /// Meta commands start with '.' (like .tables, .dbinfo)
+    Meta(MetaCommand),
+    /// SQL commands are any other valid SQL statements
+    Sql(String),
+}
+
+/// Meta commands that start with '.'
+#[derive(Debug, Clone, PartialEq)]
+pub enum MetaCommand {
     DbInfo,
     Tables,
 }
@@ -11,10 +20,16 @@ impl std::str::FromStr for Command {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            ".dbinfo" => Ok(Command::DbInfo),
-            ".tables" => Ok(Command::Tables),
-            _ => Err(format!("Unknown command: {}", s)),
+        if s.starts_with('.') {
+            // Parse meta commands
+            match s {
+                ".dbinfo" => Ok(Command::Meta(MetaCommand::DbInfo)),
+                ".tables" => Ok(Command::Meta(MetaCommand::Tables)),
+                _ => Err(format!("Unknown meta command: {}", s)),
+            }
+        } else {
+            // Treat everything else as SQL
+            Ok(Command::Sql(s.to_string()))
         }
     }
 }
@@ -22,8 +37,9 @@ impl std::str::FromStr for Command {
 impl Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Command::DbInfo => write!(f, ".dbinfo"),
-            Command::Tables => write!(f, ".tables"),
+            Command::Meta(MetaCommand::DbInfo) => write!(f, ".dbinfo"),
+            Command::Meta(MetaCommand::Tables) => write!(f, ".tables"),
+            Command::Sql(sql) => write!(f, "{}", sql),
         }
     }
 }
@@ -42,7 +58,7 @@ impl Args {
         let args: Vec<String> = env::args().collect();
 
         if args.len() != 3 {
-            return Err("Usage: <program> <database_file> <command>".to_string());
+            return Err("Usage: <program> <database_file> <command-or-sql-statement>".to_string());
         }
 
         let file = PathBuf::from(&args[1]);
