@@ -6,7 +6,8 @@
 
 use super::btree::BTreePage;
 use super::db::SQLiteDatabase;
-use super::statement::{Expression, FunctionCall, Statement};
+use super::expression::{Expression, FunctionCall};
+use super::statement::Statement;
 use crate::sqlite::varint::Varint;
 use anyhow::{anyhow, Result};
 use std::fmt::Display;

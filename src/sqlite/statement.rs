@@ -11,78 +11,27 @@
 //! let stmt = Statement::parse(sql)?;
 //! ```
 
+use crate::sqlite::expression::{Expression, FunctionCall};
+use crate::sqlite::token::Token;
 use anyhow::{anyhow, Result};
-
-/// Represents different types of SQL tokens
-#[derive(Debug, PartialEq, Clone)]
-pub enum Token {
-    /// Keywords in SQL (SELECT, FROM, etc)
-    Keyword(String),
-    /// Identifiers like table names, column names
-    Identifier(String),
-    /// Special characters and operators
-    Symbol(char),
-    /// Function names
-    Function(String),
-    /// The wildcard operator *
-    Asterisk,
-}
-
-/// Represents a SQL function call
-#[derive(Debug)]
-pub struct FunctionCall {
-    /// Name of the function (e.g., "COUNT")
-    pub name: String,
-    /// Arguments to the function
-    pub args: Vec<Expression>,
-}
-
-/// Represents different types of SQL expressions
-#[derive(Debug)]
-pub enum Expression {
-    /// A function call like COUNT(*)
-    Function(FunctionCall),
-    /// A wildcard selector *
-    Asterisk,
-    /// A column reference
-    Column(String),
-}
 
 /// Represents a parsed SQL statement
 #[derive(Debug)]
 pub struct Statement {
     /// The expressions to select
     pub selections: Vec<Expression>,
-    /// The table name to select from
+    /// The table name to apply the selections to
     pub from_table: String,
 }
 
 impl Statement {
     /// Parses a SQL string into a Statement struct
-    ///
-    /// # Arguments
-    ///
-    /// * `sql` - The SQL string to parse
-    ///
-    /// # Returns
-    ///
-    /// A Result containing the parsed Statement or an error
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let stmt = Statement::parse("SELECT COUNT(*) FROM apples")?;
-    /// ```
     pub fn parse(sql: &str) -> Result<Self> {
         let tokens = Self::tokenize(sql)?;
         Self::parse_tokens(tokens)
     }
 
     /// Converts a SQL string into a vector of tokens
-    ///
-    /// # Example
-    /// "SELECT COUNT(*)" becomes:
-    /// [Keyword("SELECT"), Function("COUNT"), Symbol('('), Asterisk, Symbol(')')]
     fn tokenize(sql: &str) -> Result<Vec<Token>> {
         let mut tokens = Vec::new();
         let mut chars = sql.chars().peekable();
@@ -182,29 +131,5 @@ impl Statement {
             selections,
             from_table,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_simple_count() -> Result<()> {
-        let sql = "SELECT COUNT(*) FROM apples";
-        let stmt = Statement::parse(sql)?;
-
-        assert_eq!(stmt.from_table, "apples");
-        assert_eq!(stmt.selections.len(), 1);
-
-        if let Expression::Function(func) = &stmt.selections[0] {
-            assert_eq!(func.name, "COUNT");
-            assert_eq!(func.args.len(), 1);
-            assert!(matches!(func.args[0], Expression::Asterisk));
-        } else {
-            panic!("Expected function expression");
-        }
-
-        Ok(())
     }
 }

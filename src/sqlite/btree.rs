@@ -3,6 +3,16 @@ use std::io::{Read, Seek, SeekFrom};
 use tracing::info;
 
 /// Represents a B-tree page in SQLite
+///
+/// ## B-tree Page Structure
+///
+/// Each page in the database file is a B-tree page that contains:
+///
+/// - Page header (8-12 bytes)
+/// - Cell pointer array
+/// - Unallocated space
+/// - Cell content area
+/// - Reserved region
 pub struct BTreePage {
     /// Raw page data
     data: Vec<u8>,
@@ -13,6 +23,14 @@ pub struct BTreePage {
 }
 
 /// Represents a B-tree page header
+///
+/// ## B-tree Page Header Format
+///
+/// - Byte 0: Page type
+/// - Bytes 1-2: First freeblock offset
+/// - Bytes 3-4: Number of cells
+/// - Bytes 5-6: Cell content offset
+/// - Byte 7: Number of fragmented free bytes
 #[derive(Debug)]
 pub struct BTreePageHeader {
     /// Page type (leaf=13, interior=5)
