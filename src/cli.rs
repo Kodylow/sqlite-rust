@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use chrono::Local;
 use std::{
     env,
     fmt::Display,
@@ -64,17 +65,22 @@ impl Args {
     }
 }
 
+/// A small wrapper around the state needed to store and interact with user input.
+/// Similar to the C implementation's InputBuffer struct.
 pub struct InputBuffer {
     buffer: String,
 }
 
 impl InputBuffer {
+    /// Creates a new empty InputBuffer
     pub fn new() -> Self {
         Self {
             buffer: String::new(),
         }
     }
 
+    /// Reads a line of input from stdin into the buffer.
+    /// Trims trailing whitespace and returns Result.
     pub fn read_input(&mut self) -> Result<()> {
         self.buffer.clear();
         io::stdout().flush()?;
@@ -84,6 +90,7 @@ impl InputBuffer {
     }
 }
 
+/// Prints the SQLite prompt to stdout
 pub fn print_prompt() {
     print!("sqlite-rs> ");
 }
@@ -98,6 +105,8 @@ pub fn handle_tables() -> Result<()> {
     Ok(())
 }
 
+/// Handles a command entered by the user.
+/// Returns Ok(true) if the REPL should exit, Ok(false) otherwise.
 pub fn handle_command(command: &str) -> Result<bool> {
     match command {
         ".exit" => Ok(true),
@@ -117,7 +126,19 @@ pub fn handle_command(command: &str) -> Result<bool> {
     }
 }
 
+/// Starts the REPL (Read-Execute-Print Loop) mode.
+/// Prints welcome message and enters an infinite loop that:
+/// 1. Prints the prompt
+/// 2. Gets a line of input
+/// 3. Processes that line of input
+/// Loop continues until .exit command is received
 pub fn repl_mode() -> Result<()> {
+    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    println!("SQLite-rs v0.1.0 {}", timestamp);
+    println!("Enter \".help\" for usage hints.");
+    println!("Connected to a transient in-memory database.");
+    println!("Use \".open FILENAME\" to reopen on a persistent database.");
+
     let mut input_buffer = InputBuffer::new();
 
     loop {
