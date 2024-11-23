@@ -54,7 +54,6 @@ impl SQLiteDatabase {
             }
             Expression::Column(column_name) => self.read_column(&stmt.from_table, column_name),
             Expression::Asterisk => self.read_all_columns(&stmt.from_table),
-            _ => Err(anyhow!("Unsupported expression type")),
         }
     }
 
@@ -222,7 +221,7 @@ impl SQLiteDatabase {
     }
 
     /// Reads column values from a table
-    fn read_column(&mut self, table_name: &str, column_name: &str) -> Result<ExecuteResult> {
+    fn read_column(&mut self, table_name: &str, _column_name: &str) -> Result<ExecuteResult> {
         let root_page = self.find_table_root_page(table_name)?;
         let page_size = self.get_info()?.page_size();
         let mut values = Vec::new();
