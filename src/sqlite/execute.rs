@@ -7,6 +7,7 @@
 use super::btree::BTreePage;
 use super::db::SQLiteDatabase;
 use super::expression::{Expression, FunctionCall};
+use super::record::Record;
 use super::statement::Statement;
 use crate::sqlite::varint::Varint;
 use anyhow::{anyhow, Result};
@@ -21,13 +22,20 @@ use tracing::info;
 pub enum ExecuteResult {
     /// Count result, used for COUNT(*) queries
     Count(u32),
-    // Add other result types as needed
+    /// Values result, used for SELECT queries
+    Values(Vec<String>),
 }
 
 impl Display for ExecuteResult {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             ExecuteResult::Count(count) => write!(f, "{}", count),
+            ExecuteResult::Values(values) => {
+                for value in values {
+                    writeln!(f, "{}", value)?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -44,6 +52,8 @@ impl SQLiteDatabase {
                 }
                 Err(anyhow!("Unsupported function: {}", name))
             }
+            Expression::Column(column_name) => self.read_column(&stmt.from_table, column_name),
+            Expression::Asterisk => self.read_all_columns(&stmt.from_table),
             _ => Err(anyhow!("Unsupported expression type")),
         }
     }
@@ -209,5 +219,78 @@ impl SQLiteDatabase {
                 Err(anyhow!("Invalid page type: {}", pt))
             }
         }
+    }
+
+    /// Reads column values from a table
+    fn read_column(&mut self, table_name: &str, column_name: &str) -> Result<ExecuteResult> {
+        let root_page = self.find_table_root_page(table_name)?;
+        let page_size = self.get_info()?.page_size();
+        let mut values = Vec::new();
+
+        // Read the root page
+        let page = BTreePage::read(&mut self.file, root_page, page_size)?;
+
+        // For now, assume it's a leaf page and just read the values
+        // You'll need to handle interior pages later
+        if page.page_type() == 13 {
+            for i in 0..page.num_cells() {
+                // This is a placeholder - you'll need to implement actual record reading
+                values.push(format!("{}", i));
+            }
+        }
+
+        Ok(ExecuteResult::Values(values))
+    }
+
+    /// Reads all columns from a table
+    fn read_all_columns(&mut self, table_name: &str) -> Result<ExecuteResult> {
+        let root_page = self.find_table_root_page(table_name)?;
+        let page_size = self.get_info()?.page_size();
+
+        let page = BTreePage::read(&mut self.file, root_page, page_size)?;
+        let mut rows = Vec::new();
+
+        // Read cells in reverse order since they're stored from end to start
+        for i in (0..page.num_cells()).rev() {
+            let cell_data = page.get_cell_data(i)?;
+            let mut record = Record::new(&cell_data);
+
+            // Read and skip the payload length
+            let payload_length = record.read_varint()?;
+            info!("Payload length: {}", payload_length);
+
+            // Read and skip the rowid
+            let rowid = record.read_varint()?;
+            info!("Row ID: {}", rowid);
+
+            // Read header
+            let serial_types = record.read_header()?;
+            info!("Serial types: {:?}", serial_types);
+
+            let mut row = Vec::new();
+            row.push(rowid.to_string()); // Add rowid as first column
+
+            // Skip first serial type as it's for internal use
+            for &type_code in serial_types.iter().skip(1) {
+                let value = match type_code {
+                    0 => "NULL".to_string(),
+                    1..=6 => record.read_integer(type_code)?.to_string(),
+                    7 => record.read_float()?.to_string(),
+                    n if n >= 13 => {
+                        if let Some(s) = record.read_string_field(type_code)? {
+                            s
+                        } else {
+                            "NULL".to_string()
+                        }
+                    }
+                    _ => "?".to_string(),
+                };
+                row.push(value);
+            }
+
+            rows.push(row.join("|"));
+        }
+
+        Ok(ExecuteResult::Values(rows))
     }
 }

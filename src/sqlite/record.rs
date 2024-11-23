@@ -29,7 +29,7 @@
 //! - N >= 13: Text/BLOB of (N-13)/2 bytes
 
 use super::varint::Varint;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 /// Parser for SQLite records (table/index rows)
 pub struct Record<'a> {
@@ -76,12 +76,13 @@ impl<'a> Record<'a> {
         }
     }
 
-    pub fn read_string_field(&self, type_code: u64) -> Result<Option<String>> {
+    pub fn read_string_field(&mut self, type_code: u64) -> Result<Option<String>> {
         if type_code >= 13 {
             let size = ((type_code - 13) / 2) as usize;
             if let Ok(string) =
                 String::from_utf8(self.data[self.position..self.position + size].to_vec())
             {
+                self.position += size;
                 return Ok(Some(string));
             }
         }
@@ -90,5 +91,35 @@ impl<'a> Record<'a> {
 
     pub fn position(&self) -> usize {
         self.position
+    }
+
+    pub fn read_varint(&mut self) -> Result<u64> {
+        let value = self.data.read_varint(&self.data[self.position..])?;
+        self.position += self.data.varint_size(&self.data[self.position..]);
+        Ok(value)
+    }
+
+    pub fn read_integer(&mut self, type_code: u64) -> Result<i64> {
+        let size = match type_code {
+            1 => 1,
+            2 => 2,
+            3 => 3,
+            4 => 4,
+            5 => 6,
+            6 => 8,
+            _ => return Err(anyhow!("Invalid integer type code")),
+        };
+
+        let mut bytes = [0u8; 8];
+        bytes[..size].copy_from_slice(&self.data[self.position..self.position + size]);
+        self.position += size;
+
+        Ok(i64::from_be_bytes(bytes))
+    }
+
+    pub fn read_float(&mut self) -> Result<f64> {
+        let bytes = self.data[self.position..self.position + 8].try_into()?;
+        self.position += 8;
+        Ok(f64::from_be_bytes(bytes))
     }
 }

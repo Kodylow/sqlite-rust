@@ -94,6 +94,9 @@ impl Statement {
         // Parse selections
         while let Some(token) = iter.next() {
             match token {
+                Token::Asterisk => {
+                    selections.push(Expression::Asterisk);
+                }
                 Token::Function(name) => {
                     // Handle function call
                     match iter.next() {

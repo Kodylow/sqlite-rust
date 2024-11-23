@@ -145,6 +145,69 @@ impl BTreePage {
     pub fn data(&self) -> &[u8] {
         &self.data
     }
+
+    /// Gets the raw data for a cell at the given index
+    pub fn get_cell_data(&self, cell_index: u16) -> Result<Vec<u8>> {
+        if cell_index >= self.num_cells {
+            return Err(anyhow!("Cell index out of bounds"));
+        }
+
+        // Parse the page header
+        let header = BTreePageHeader::parse(&self.data)?;
+        info!("Page header: {:?}", header);
+        
+        // Get cell pointer array
+        let mut cell_pointers = self.read_cell_pointers(0);
+        // Sort cell pointers in ascending order
+        cell_pointers.sort_unstable();
+        info!("Sorted cell pointers: {:?}", cell_pointers);
+        info!("Accessing cell index: {}", cell_index);
+        
+        let cell_start = cell_pointers[cell_index as usize];
+        info!("Cell start offset: {}", cell_start);
+        
+        // For leaf pages, get data after the payload length and rowid
+        if self.page_type == 13 {
+            info!("Processing leaf page (type 13)");
+            
+            // Calculate cell end
+            let cell_end = if cell_index as usize + 1 < cell_pointers.len() {
+                let end = cell_pointers[cell_index as usize + 1];
+                info!("Using next cell pointer as end: {}", end);
+                end
+            } else {
+                // For the last cell, use the page size as the end
+                let end = self.data.len();
+                info!("Using page size as end (last cell): {}", end);
+                end
+            };
+
+            info!("Page data length: {}", self.data.len());
+            info!("Cell boundaries - start: {}, end: {}", cell_start, cell_end);
+
+            // Validate boundaries
+            if cell_start >= self.data.len() {
+                return Err(anyhow!("Cell start {} exceeds page size {}", cell_start, self.data.len()));
+            }
+            if cell_end > self.data.len() {
+                return Err(anyhow!("Cell end {} exceeds page size {}", cell_end, self.data.len()));
+            }
+            if cell_start >= cell_end {
+                return Err(anyhow!(
+                    "Invalid cell boundaries: start={} >= end={}. Header: {:?}, Cell pointers: {:?}", 
+                    cell_start, 
+                    cell_end,
+                    header,
+                    cell_pointers
+                ));
+            }
+
+            Ok(self.data[cell_start..cell_end].to_vec())
+        } else {
+            info!("Not a leaf page, type: {}", self.page_type);
+            Err(anyhow!("Not a leaf page"))
+        }
+    }
 }
 
 impl BTreePageHeader {
