@@ -50,6 +50,7 @@
 //! - Bytes 5-6: Cell content offset
 //! - Byte 7: Number of fragmented free bytes
 
+use super::btree::BTreePageHeader;
 use anyhow::Result;
 use std::fs::File;
 use std::io::{prelude::*, SeekFrom};
@@ -170,13 +171,13 @@ impl SQLiteDatabase {
         let header_size = 100;
 
         // Read B-tree page header
-        let num_cells = u16::from_be_bytes([page[header_size + 3], page[header_size + 4]]);
-        let _content_offset =
-            u16::from_be_bytes([page[header_size + 5], page[header_size + 6]]) as usize;
+        let btree_header = BTreePageHeader::parse(&page[header_size..])?;
+        let num_cells = btree_header.num_cells;
+        let _content_offset = btree_header.content_offset;
 
         // Read cell pointer array
         let mut cell_pointers = Vec::with_capacity(num_cells as usize);
-        let array_start = header_size + 8;
+        let array_start = btree_header.cell_pointer_array_offset(header_size);
 
         for i in 0..num_cells {
             let offset = array_start + (i as usize * 2);

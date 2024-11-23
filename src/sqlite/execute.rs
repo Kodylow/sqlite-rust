@@ -4,15 +4,16 @@
 //! It implements the logic to traverse B-tree pages and process records according
 //! to the SQLite file format specification.
 
+use super::btree::BTreePage;
+use super::db::SQLiteDatabase;
+use super::statement::{Expression, FunctionCall, Statement};
+use crate::sqlite::varint::Varint;
 use anyhow::{anyhow, Result};
 use std::fmt::Display;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 use tracing::info;
-
-use super::db::SQLiteDatabase;
-use super::statement::{Expression, FunctionCall, Statement};
 
 /// Result of executing a SQL statement
 #[derive(Debug)]
@@ -92,17 +93,17 @@ impl SQLiteDatabase {
             let mut pos = ptr;
 
             // Skip payload length
-            pos += self.varint_size(&page[pos..]);
+            pos += page[pos..].varint_size(&page[pos..]);
             info!("After payload length, pos: {}", pos);
 
             // Skip rowid
-            pos += self.varint_size(&page[pos..]);
+            pos += page[pos..].varint_size(&page[pos..]);
             info!("After rowid, pos: {}", pos);
 
             // Read header size
-            let header_size = self.read_varint(&page[pos..])? as usize;
-            pos += self.varint_size(&page[pos..]);
-            let header_end = pos + header_size - self.varint_size(&page[pos - 1..]);
+            let header_size = page[pos..].read_varint(&page[pos..])? as usize;
+            pos += page[pos..].varint_size(&page[pos..]);
+            let header_end = pos + header_size - page[pos - 1..].varint_size(&page[pos - 1..]);
             info!(
                 "Header size: {}, pos: {}, header_end: {}",
                 header_size, pos, header_end
@@ -111,8 +112,8 @@ impl SQLiteDatabase {
             // Read serial types
             let mut serial_types = Vec::new();
             while pos < header_end {
-                let serial_type = self.read_varint(&page[pos..])?;
-                pos += self.varint_size(&page[pos..]);
+                let serial_type = page[pos..].read_varint(&page[pos..])?;
+                pos += page[pos..].varint_size(&page[pos..]);
                 serial_types.push(serial_type);
             }
             info!("Serial types: {:?}", serial_types);
@@ -179,104 +180,32 @@ impl SQLiteDatabase {
     /// Recursively counts records in a B-tree starting from given page
     fn count_records_in_btree(&mut self, page_num: u32) -> Result<u32> {
         info!("Counting records in page: {}", page_num);
+        let page_size = self.get_info()?.page_size();
 
-        // Get page size with detailed logging
-        let info = self.get_info()?;
-        info!("DatabaseInfo raw: {:?}", info);
-        let page_size = info.page_size();
-        info!("Page size from info: {}", page_size);
+        let page = BTreePage::read(&mut self.file, page_num, page_size)?;
 
-        if page_size == 0 {
-            // Log the current file position
-            let pos = self.file.stream_position()?;
-            info!("Current file position: {}", pos);
-
-            // Try reading header bytes directly
-            self.file.seek(SeekFrom::Start(16))?; // Page size is at offset 16
-            let mut page_size_bytes = [0u8; 2];
-            self.file.read_exact(&mut page_size_bytes)?;
-            let direct_page_size = u16::from_be_bytes(page_size_bytes);
-            info!(
-                "Direct read page size bytes: {:?}, value: {}",
-                page_size_bytes, direct_page_size
-            );
-
-            return Err(anyhow!("Invalid page size: 0"));
-        }
-
-        let mut page = vec![0; page_size as usize];
-
-        // Calculate correct page offset - page numbers start at 1
-        let offset = ((page_num - 1) as u64) * (page_size as u64);
-        info!("Seeking to offset: {} for page {}", offset, page_num);
-
-        // Verify file length
-        let file_len = self.file.seek(SeekFrom::End(0))?;
-        info!("File length: {}", file_len);
-        if offset >= file_len {
-            return Err(anyhow!(
-                "Page offset {} exceeds file length {}",
-                offset,
-                file_len
-            ));
-        }
-
-        // Read the page with detailed error checking
-        self.file.seek(SeekFrom::Start(offset))?;
-        let bytes_read = self.file.read(&mut page)?;
-        info!("Read {} bytes at offset {}", bytes_read, offset);
-
-        if bytes_read != page_size as usize {
-            return Err(anyhow!(
-                "Partial read: got {} bytes, expected {}",
-                bytes_read,
-                page_size
-            ));
-        }
-
-        let page_type = page[0];
-        info!("Read page type: {}", page_type);
-
-        let num_cells = u16::from_be_bytes([page[3], page[4]]) as u32;
-        info!("Number of cells: {}", num_cells);
-
-        match page_type {
+        match page.page_type() {
             13 => {
-                info!("Leaf page, returning count: {}", num_cells);
-                Ok(num_cells)
+                // Leaf page
+                info!("Leaf page, returning count: {}", page.num_cells());
+                Ok(page.num_cells() as u32)
             }
             5 => {
+                // Interior page
                 info!("Interior page, traversing children");
                 let mut total = 0;
-                let array_start = 12;
 
-                for i in 0..num_cells {
-                    let ptr_offset = array_start + (i as usize * 2);
-                    let cell_ptr =
-                        u16::from_be_bytes([page[ptr_offset], page[ptr_offset + 1]]) as usize;
-                    info!("Processing child pointer at offset: {}", cell_ptr);
-
-                    let child_page = u32::from_be_bytes([
-                        page[cell_ptr],
-                        page[cell_ptr + 1],
-                        page[cell_ptr + 2],
-                        page[cell_ptr + 3],
-                    ]);
+                for child_page in page.get_child_pages()? {
                     info!("Following child page: {}", child_page);
-
                     total += self.count_records_in_btree(child_page)?;
                 }
-
-                let rightmost = u32::from_be_bytes([page[8], page[9], page[10], page[11]]);
-                info!("Processing rightmost page: {}", rightmost);
-                total += self.count_records_in_btree(rightmost)?;
 
                 info!("Total count for this subtree: {}", total);
                 Ok(total)
             }
-            _ => {
-                info!("Invalid page type encountered: {}", page_type);
-                Err(anyhow!("Invalid page type: {}", page_type))
+            pt => {
+                info!("Invalid page type encountered: {}", pt);
+                Err(anyhow!("Invalid page type: {}", pt))
             }
         }
     }
