@@ -11,8 +11,8 @@
 //! let stmt = Statement::parse(sql)?;
 //! ```
 
-use crate::sqlite::expression::{Expression, FunctionCall};
-use crate::sqlite::token::Token;
+use crate::sqlite::parser::expression::{Expression, FunctionCall};
+use crate::sqlite::parser::token::Token;
 use anyhow::{anyhow, Result};
 
 /// Represents a parsed SQL statement

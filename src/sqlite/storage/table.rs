@@ -1,6 +1,6 @@
-use super::btree::BTreePageHeader;
-use super::header::DatabaseHeader;
-use super::record::Record;
+use crate::sqlite::core::btree::BTreePageHeader;
+use crate::sqlite::core::header::DatabaseHeader;
+use crate::sqlite::core::record::Record;
 use anyhow::Result;
 use std::fs::File;
 use std::io::prelude::*;

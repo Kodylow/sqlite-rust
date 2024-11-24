@@ -8,8 +8,8 @@
 //!
 //! - Database header (100 bytes)
 //! - First page of the sqlite_master table
-use super::header::DatabaseHeader;
-use super::table::TableReader;
+use crate::sqlite::core::header::DatabaseHeader;
+use crate::sqlite::storage::table::TableReader;
 use anyhow::Result;
 use std::fs::File;
 use std::io::prelude::*;

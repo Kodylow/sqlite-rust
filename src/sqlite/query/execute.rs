@@ -4,12 +4,12 @@
 //! It implements the logic to traverse B-tree pages and process records according
 //! to the SQLite file format specification.
 
-use super::btree::BTreePage;
-use super::db::SQLiteDatabase;
-use super::expression::{Expression, FunctionCall};
-use super::record::Record;
-use super::statement::Statement;
-use crate::sqlite::varint::Varint;
+use crate::sqlite::core::btree::BTreePage;
+use crate::sqlite::core::record::Record;
+use crate::sqlite::core::varint::Varint;
+use crate::sqlite::parser::expression::{Expression, FunctionCall};
+use crate::sqlite::parser::statement::Statement;
+use crate::sqlite::storage::db::SQLiteDatabase;
 use anyhow::{anyhow, Result};
 use std::fmt::Display;
 use std::io::Read;
