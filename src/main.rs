@@ -33,7 +33,7 @@ pub fn run(args: cli::Args) -> Result<()> {
                 println!("{}", tables.join(" "));
             }
         },
-        // Try parsing SQL
+        // Try parsing as SQL statement
         cli::Command::Sql(sql) => {
             let statement = sqlite::parser::statement::Statement::parse(&sql)?;
             info!("Statement: {:?}", statement);
