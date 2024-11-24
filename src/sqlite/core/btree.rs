@@ -20,6 +20,8 @@ pub struct BTreePage {
     page_type: u8,
     /// Number of cells in page
     num_cells: u16,
+    /// Position in the page data
+    position: usize,
 }
 
 /// Represents a B-tree page header
@@ -82,6 +84,7 @@ impl BTreePage {
             data: page,
             page_type,
             num_cells,
+            position: 0,
         })
     }
 
@@ -207,6 +210,93 @@ impl BTreePage {
             info!("Not a leaf page, type: {}", self.page_type);
             Err(anyhow!("Not a leaf page"))
         }
+    }
+
+    pub fn read_column_value(&mut self, column_index: usize) -> Result<Option<String>> {
+        // Skip the rowid varint at the start of the record
+        self.read_varint()?;
+        
+        // Read header length
+        let header_size = self.read_varint()? as usize;
+        let header_end = self.position + header_size;
+        
+        // Read serial types
+        let mut serial_types = Vec::new();
+        while self.position < header_end {
+            serial_types.push(self.read_varint()?);
+        }
+        
+        // Skip to the target column
+        for i in 0..column_index {
+            self.skip_value(serial_types[i])?;
+        }
+        
+        // Read the target column value
+        if column_index < serial_types.len() {
+            self.read_string_field(serial_types[column_index])
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn skip_value(&mut self, type_code: u64) -> Result<()> {
+        let size = if type_code >= 13 {
+            ((type_code - 13) / 2) as usize
+        } else {
+            match type_code {
+                0 => 0,  // NULL
+                1 => 1,  // 8-bit signed int
+                2 => 2,  // 16-bit signed int
+                3 => 3,  // 24-bit signed int
+                4 => 4,  // 32-bit signed int
+                5 => 6,  // 48-bit signed int
+                6 => 8,  // 64-bit signed int
+                7 => 8,  // IEEE 754-2008 64
+                _ => return Err(anyhow!("Invalid serial type: {}", type_code)),
+            }
+        };
+        self.position += size;
+        Ok(())
+    }
+
+    fn read_varint(&mut self) -> Result<u64> {
+        let mut result: u64 = 0;
+        let mut shift = 0;
+
+        for _ in 0..8 {
+            let byte = self.data[self.position];
+            self.position += 1;
+            result |= ((byte & 0x7f) as u64) << shift;
+            if byte & 0x80 == 0 {
+                return Ok(result);
+            }
+            shift += 7;
+        }
+
+        // Handle last byte without continuation bit
+        let byte = self.data[self.position];
+        self.position += 1;
+        result |= (byte as u64) << shift;
+        Ok(result)
+    }
+
+    fn read_string_field(&mut self, type_code: u64) -> Result<Option<String>> {
+        if type_code == 0 {
+            return Ok(None);
+        }
+        
+        let len = if type_code >= 13 {
+            ((type_code - 13) / 2) as usize
+        } else {
+            return Ok(None); // Non-text fields return None
+        };
+        
+        let str_bytes = &self.data[self.position..self.position + len];
+        self.position += len;
+        
+        String::from_utf8(str_bytes.to_vec())
+            .map(Some)
+            .map_err(|e| anyhow!(e))
     }
 }
 

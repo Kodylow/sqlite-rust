@@ -10,6 +10,7 @@ use crate::sqlite::core::varint::Varint;
 use crate::sqlite::parser::expression::{Expression, FunctionCall};
 use crate::sqlite::parser::statement::Statement;
 use crate::sqlite::storage::db::SQLiteDatabase;
+use crate::sqlite::storage::table::TableReader;
 use anyhow::{anyhow, Result};
 use std::fmt::Display;
 use std::io::Read;
@@ -219,9 +220,23 @@ impl SQLiteDatabase {
             }
         }
     }
-
     /// Reads column values from a table
-    fn read_column(&mut self, table_name: &str, _column_name: &str) -> Result<ExecuteResult> {
+    fn read_column(&mut self, table_name: &str, column_name: &str) -> Result<ExecuteResult> {
+        // First get the schema to find column position
+        let mut table_reader = TableReader::new(&mut self.file, self.header.page_size as usize);
+        let schema = table_reader.get_table_schema(table_name)?;
+        info!("Retrieved schema for {}: {:?}", table_name, schema);
+
+        // Find column index
+        let column_index = schema
+            .columns
+            .iter()
+            .position(|col| col.name == column_name)
+            .ok_or_else(|| anyhow!("Column {} not found in table {}", column_name, table_name))?;
+
+        info!("Found column {} at index {}", column_name, column_index);
+
+        // Now read the actual data
         let root_page = self.find_table_root_page(table_name)?;
         let page_size = self.get_info()?.page_size();
         let mut values = Vec::new();
@@ -243,7 +258,7 @@ impl SQLiteDatabase {
 
                 // Skip first serial type (internal)
                 for (idx, &type_code) in serial_types.iter().skip(1).enumerate() {
-                    if idx == 0 {
+                    if idx == column_index {
                         let value = match type_code {
                             0 => "NULL".to_string(),
                             1..=6 => record.read_integer(type_code)?.to_string(),

@@ -21,7 +21,7 @@ pub struct SQLiteDatabase {
     /// The underlying database file handle
     pub file: File,
     /// Parsed database header
-    header: DatabaseHeader,
+    pub header: DatabaseHeader,
 }
 
 /// Contains metadata about a SQLite database

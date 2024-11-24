@@ -30,6 +30,7 @@
 
 use super::varint::Varint;
 use anyhow::{anyhow, Result};
+use tracing::info;
 
 /// Parser for SQLite records (table/index rows)
 pub struct Record<'a> {
@@ -79,10 +80,21 @@ impl<'a> Record<'a> {
     pub fn read_string_field(&mut self, type_code: u64) -> Result<Option<String>> {
         if type_code >= 13 {
             let size = ((type_code - 13) / 2) as usize;
+            info!(
+                "Attempting to read string field of size {} at position {} (data length: {})",
+                size,
+                self.position,
+                self.data.len()
+            );
+
+            // For now, just read what we have available
+            let available_size = std::cmp::min(size, self.data.len() - self.position);
+
             if let Ok(string) =
-                String::from_utf8(self.data[self.position..self.position + size].to_vec())
+                String::from_utf8(self.data[self.position..self.position + available_size].to_vec())
             {
-                self.position += size;
+                info!("Successfully read string (truncated): {}", string);
+                self.position += available_size;
                 return Ok(Some(string));
             }
         }
